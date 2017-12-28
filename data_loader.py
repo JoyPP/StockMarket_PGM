@@ -48,6 +48,28 @@ def fasttext_model_pretraining():
     model = fasttext.skipgram(alltext, 'model')
     return model
 
+def get_sen_label(texts):
+    '''
+    process the labels (texts)
+    :param texts:
+    :return: list of labels
+    '''
+    # eliminate whitespace and replace chinese characters into english character
+    texts = texts.lower().strip().replace(" ", "").replace("\xef\xbc\x88", "(").replace("\xef\xbc\x89", ")").replace("\xef\xbc\x9b", ";").replace("\xef\xbc\x9a", ":").split(";")
+    labels = list()
+    for text in texts:
+        if text in ['statement', 'analysis', 'comparison', 'pos', 'neg', 'neural', 'none']: # if label belongs to statement, analysis, comparison, sentiment or none
+            labels.append(text)
+        elif text.startswith('ep'): # if label is event prediciton, mark as 'ep_pos', 'ep_neg' or 'ep_neu'
+            labels.append('ep_' + text[3:6])
+        elif text.startswith('mp'): # if label is market prediction, mark as {direction, time_prediction} e.g.: {"up":"1d"}
+            start = text.find("(")
+            mid = text.find(":")
+            end = text.find(")")
+            labels.append({text[start+1:mid]: text[mid+1:end]})
+        else:
+            print 'cannot recognize label:', text
+    return labels
 
 def summary_preprocessing(symbol, model, directory = 'dataset/'):
     '''
@@ -65,27 +87,36 @@ def summary_preprocessing(symbol, model, directory = 'dataset/'):
     ws = wb.get_active_sheet()
     row, col = ws.max_row, ws.max_column    # get max row and column number
     col_dict = {1: 'A', 2: 'B', 3: 'C', 4: 'D', 5: 'E', 6: 'F', 7: 'G', 8: 'H', 9: 'I', 10: 'J', 11: 'K', 12: 'L',
-                13: 'M', 14: 'N'}
-    col_range = [1] + range(5, col + 1) # related column number
+                13: 'M', 14: 'N', 15: 'O', 16: 'P', 17: 'Q', 18: 'R', 19: 'S', 20: 'T'}
+    col_range = [1] + range(5, col + 1, 2) # related column number
+
     # transfer all punctuations to whitespace
     translator = string.maketrans(string.punctuation, " " * len(string.punctuation))
+
     # transfer timezone from utc to US/Eastern timezone
     utc = pytz.utc
     eastern = pytz.timezone('US/Eastern')
     fmt = '%Y-%m-%d %H:%M:%S %Z%z'
+
     # list to save summary vector, US/Eastern time, and author information respectively
     summary_info, time_info, author_info = [], [], []
     # read summary_file
     for i in range(2, row + 1):
         # read summary and save its vector matrix into the summary_info
-        summary = ""
+        summary = dict()
         for j in col_range:
-            val = ws[col_dict[j]+str(i)].value
+            val = ws[col_dict[j]+str(i)].value.encode('utf-8').translate(translator)
             if val is not None:
-                summary += val.encode('utf-8').translate(translator) + ' '  # without eliminating punctuation
+                if j == 1:  # title
+                    summary["title"] = val
+                else: # summary
+                    label = get_sen_label(ws[col_dict[j+1]+str(i)].value.encode('utf-8'))
+                    summary[label] += val  # without eliminating punctuation
+
         words = summary.split()
         summary = [model[w] for w in words]
         summary_info.append(summary)
+
         # read time and transfer it to US/Eastern Timezone and save it into the time_info
         t = ws['C'+str(i)].value.encode('utf-8')
         YY, MM, DD, hh, mm, ss = int(t[:4]), int(t[5:7]), int(t[8:10]), int(t[11:13]), int(t[14:16]), int(t[17:19])
@@ -102,6 +133,7 @@ def summary_preprocessing(symbol, model, directory = 'dataset/'):
         else:
             t = (est + timedelta(days=1)).strftime(fmt)[:10]
         time_info.append(t) # only save the date
+
         # read author information and save it into the author_info
         author = ws['D'+str(i)].value.encode('utf-8')
         author_info.append(author)
