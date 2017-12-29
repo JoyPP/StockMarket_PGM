@@ -58,17 +58,28 @@ def get_sen_label(texts):
     texts = texts.lower().strip().replace(" ", "").replace("\xef\xbc\x88", "(").replace("\xef\xbc\x89", ")").replace("\xef\xbc\x9b", ";").replace("\xef\xbc\x9a", ":").split(";")
     labels = list()
     for text in texts:
+        '''
         if text in ['statement', 'analysis', 'comparison', 'pos', 'neg', 'neural', 'none']: # if label belongs to statement, analysis, comparison, sentiment or none
             labels.append(text)
         elif text.startswith('ep'): # if label is event prediciton, mark as 'ep_pos', 'ep_neg' or 'ep_neu'
             labels.append('ep_' + text[3:6])
-        elif text.startswith('mp'): # if label is market prediction, mark as {direction, time_prediction} e.g.: {"up":"1d"}
+        elif text.startswith('mp'): # if label is market prediction, mark as 'mp_direction_time_prediction e.g.: 'mp_up_1d'
             start = text.find("(")
-            mid = text.find(":")
             end = text.find(")")
-            labels.append({text[start+1:mid]: text[mid+1:end]})
+            labels.append('mp_'+text[start+1:end].replace(":","_"))
         else:
             print 'cannot recognize label:', text
+        '''
+        if text in ['statement', 'analysis', 'comparison', 'neural', 'none']:
+            labels.append('statement')
+        elif text in ['pos', 'neg']:
+            labels.append(text + '_none')
+        elif text.startswith('ep'): # event prediciton, label as 'pos_none', 'neg_none' and 'neu_none'
+            labels.append(text[3:6] + '_none')
+        elif text.startswith('mp'): # market prediction, label 'mp(up:1d)' as 'pos_1d'
+            start = text.find("(")
+            end = text.find(")")
+            labels.append(text[start + 1:end].replace(":", "_").replace('up','pos').replace('down','neg').replace('stay','neu'))
     return labels
 
 def summary_preprocessing(symbol, model, directory = 'dataset/'):
@@ -76,7 +87,7 @@ def summary_preprocessing(symbol, model, directory = 'dataset/'):
     load summaries for the symbol
     :param symbol: stock symbol
     :return:
-        summary_info: list saving summary, one matrix (seq_len, feature_dim) for each summary
+        summary_info: list saving summary, one dictionary {label: sentence_matrix} for each summary
         time_info: list saving time (transfer to US/Eastern timezone,
         author_info saving summary, time, author information respectively
     '''
@@ -101,21 +112,35 @@ def summary_preprocessing(symbol, model, directory = 'dataset/'):
     # list to save summary vector, US/Eastern time, and author information respectively
     summary_info, time_info, author_info = [], [], []
     # read summary_file
+    row = 200
     for i in range(2, row + 1):
         # read summary and save its vector matrix into the summary_info
         summary = dict()
         for j in col_range:
-            val = ws[col_dict[j]+str(i)].value.encode('utf-8').translate(translator)
+            val = ws[col_dict[j]+str(i)].value
             if val is not None:
+                val = val.encode('utf-8').translate(translator)
                 if j == 1:  # title
-                    summary["title"] = val
+                    summary["statement"] = val
                 else: # summary
-                    label = get_sen_label(ws[col_dict[j+1]+str(i)].value.encode('utf-8'))
-                    summary[label] += val  # without eliminating punctuation
-
-        words = summary.split()
-        summary = [model[w] for w in words]
-        summary_info.append(summary)
+                    text = ws[col_dict[j+1]+str(i)].value
+                    if text is None:    # missing labelled
+                        labels = ['statement']
+                    else:
+                        labels = get_sen_label(text.encode('utf-8'))
+                    for label in labels:
+                        if label in summary.keys():
+                            summary[label] += ' ' + val
+                        else:
+                            summary[label] = val
+            else:
+                break
+        if 'statement' in summary.keys():
+            words = summary['statement'].split()
+            summary['statement'] = [model[w] for w in words]
+            summary_info.append(summary['statement'])
+        else:
+            summary_info.append([[0]*(model.dim)])  # add an empty word list
 
         # read time and transfer it to US/Eastern Timezone and save it into the time_info
         t = ws['C'+str(i)].value.encode('utf-8')
@@ -142,19 +167,18 @@ def summary_preprocessing(symbol, model, directory = 'dataset/'):
     author_info.reverse()
     return summary_info, time_info, author_info
 
-def sen_padding(summary_info, max_len = 100):
+def sen_padding(summary_info, feature_dim = 100, max_len = 40):
     '''
     padding each sentence to the given length (max_len)
     :param summary_info: sentences matrix needs to be padded
     :param max_len: length after padding
     :return: padded sentence matrix
     '''
-    feature_dim = len(summary_info[0][0])
     for i, s in enumerate(summary_info):
         if len(s) > max_len:
             summary_info[i] = s[:max_len]
         else:
-            summary_info[i].extend([[0]*feature_dim]*(max_len - len(s)))
+            summary_info[i].extend([[0] * feature_dim] * (max_len - len(s)))
     return summary_info
 
 
@@ -167,9 +191,9 @@ def trend(target_price, basic_price, threshold = 0.01):
     '''
     percent = (float(target_price) -  float(basic_price)) / float(basic_price)
     if percent >= threshold:
-        return 2
-    elif percent <= -threshold:
         return 1
+    elif percent <= -threshold:
+        return -1
     else:
         return 0
 
@@ -222,11 +246,11 @@ def author_vec_loader(author_link):
         ws = wb.get_active_sheet()
         row = ws.max_row
         col = ['B','C','D','E','F','G','H']
-        for i in range(1, row + 1):
+        for i in range(2, row + 1):
             vec = list()
             for j in col:
-                vec.append(int(ws[j+str(i)].value.encode('utf-8')))
-            author_dict['A'+str(i)] = vec
+                vec.append(int(ws[j+str(i)].value))
+            author_dict[ws['A'+str(i)].value.encode('utf-8')] = vec
         # save author_dict into pkl file
         with open(author_file, 'w') as f:
             cPickle.dump(author_dict, f)
@@ -324,7 +348,7 @@ def data_division(data, batch_size, window_size, shuffle=False):
     return train_dataset, test_dataset
 
 
-def data_loader_for_each_symbol_cnn(symbol, model, directory, max_len = 100, batch_size = 1, time_interval = 7, window_size = 10):
+def data_loader_for_each_symbol(symbol, directory, max_len = 40, batch_size = 16, time_interval = 7, window_size = 10):
     '''
     :param symbol: symbol of the stock
     :param model: fasttext model
@@ -332,11 +356,18 @@ def data_loader_for_each_symbol_cnn(symbol, model, directory, max_len = 100, bat
     :param time_interval: prediction time interval
     :return: train_dataset, test_dataset consisting of tuples of (inputs, targets)
     '''
+
+    if not os.path.exists('model.bin'):
+        model = fasttext_model_pretraining()
+    else:
+        model = fasttext.load_model('model.bin')
+    feature_dim = model.dim
+
     # get summary information for each symbol
     summary_info, time_info, author_link = summary_preprocessing(symbol, model, directory)
 
     # padding summary with fix len
-    summary_info = sen_padding(summary_info, max_len)
+    summary_info = sen_padding(summary_info, feature_dim, max_len)
     print '#data = ', len(summary_info)
     # get label (up or down) for each symbol
     targets_dict = price_preprocessing(symbol, time_info, time_interval, directory)
@@ -348,6 +379,10 @@ def data_loader_for_each_symbol_cnn(symbol, model, directory, max_len = 100, bat
     return data_division((summary_info, targets_dict[str(time_interval)]), batch_size, window_size)
 
 
-
-def data_loader():
-    pass
+def data_loader(symbols, directory):
+    train_dataset, test_dataset = [], []
+    for symbol in symbols:
+        train, test = data_loader_for_each_symbol(symbol, directory)
+        train_dataset.extend(train)
+        test_dataset.extend(test)
+    return train_dataset, test_dataset
