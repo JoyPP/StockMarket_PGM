@@ -8,25 +8,36 @@ clf = SVC(probability=True)
 clf.fit(x, y)
 clf.predict([[-0.8, -1], [0.4,0.5]])
 
+def get_bullish_set(dataset, svm_model, threshold = 0.5):
+    '''
+    return bullish dataset from dataset which probability not less than threshold by svm_model
+    :return:
+    '''
+    x_train, y_train = dataset
+    y_pred = svm_model.predict_proba(x_train)
+    bullish_idx = np.where(svm_model.classes_)[0][0]
+    y_pred = y_pred[:, bullish_idx]
+
+    idx = np.where(y_pred >= threshold)[0]
+
+    return x_train[idx], y_train[idx]
+
+
 def ChiSquareTest(c_u, i_u, c_bl, i_bl):
     test_stat = math.pow(c_u - c_bl, 2) / c_bl + math.pow(i_u - i_bl, 2) / i_bl
     return test_stat
 
+
 def ExpertPValure(dataset, svm_model, p_bl, alpha, threshold = 0.5):
-    x_train, y_train = dataset
-    y_pred = svm_model.predict_proba(x_train)
-    bullish_idx = np.where(svm_model.classes_)[0][0]
-    y_pred = y_pred[:,bullish_idx]
+    # get bullish dataset
+    x_train, _ = get_bullish_set(dataset, svm_model, threshold)
 
     c_u, i_u = 0, 0
     for i, x in enumerate(x_train):
-        if y_pred[i] >= threshold:   # probability of being predicted bullish
-            if y[i]: # really stock price up
-                c_u += 1
-            else:
-                i_u += 1
+        if y[i]: # really stock price up
+            c_u += 1
         else:
-            continue
+            i_u += 1
     p_u = float(c_u) / (c_u + i_u)
     if p_u <= p_bl:
         return 0, 0   # non_expert
@@ -52,6 +63,8 @@ def Best_Threshold(dataset, svm_model, p_bl, alpha):
             best_p = p_value
             best_t = t
     return best_t, best_p
+
+
 
 
 class Join_All:
@@ -87,21 +100,25 @@ class Per_User:
         '''
         get a dict of experts.  {userid: {"threshold": t, "p_value": p_value}}
         '''
-        expert_id = dict()
+        self.expert_id = dict()
+        p_list = list()
+        rank_list = list()
         for userid, (x_train, y_train) in zip(self.train_data):
             if self.hold_data.has_key(userid) and self.test_data.has_key(userid):
-                # learn SVM_u for each user and
+                # learn SVM_u for each user from training dataset
                 clf = SVC(probability=True)
                 clf.fit(x_train, y_train)
                 # optimize the classification threshold (grid search) resulting in best p-value for each classifier in hold-out dataset
                 best_threshold, p_value = Best_Threshold(self.hold_data, clf, p_lb, alpha)
                 if best_threshold is not None:
-                    expert_id[userid] = dict()
-                    expert_id[userid]["threshold"] = best_threshold
-                    expert_id[userid]["p_value"] = p_value
+                    self.expert_id[userid] = dict()
+                    p_list.append(p_value)
+                    # data for user[userid]
+                    data_u = get_bullish_set(self.test_data[userid], clf, best_threshold)
+                    rank_list.append(data_u)
+        rank_list = list(np.take(rank_list, np.argsort(p_list)))
+        return rank_list
 
-    def test(self):
-        pass
 
 
 class Joint_Experts:
