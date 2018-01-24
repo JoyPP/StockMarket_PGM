@@ -1,6 +1,6 @@
 from sklearn.svm import SVC
-from sklearn.feature_selection import chi2
 import numpy as np
+import math
 
 x = np.array([[-1, -1], [-2, -1], [1, 1], [2, 1]])
 y = np.array([0, -1, 0, 1])
@@ -8,13 +8,19 @@ clf = SVC(probability=True)
 clf.fit(x, y)
 clf.predict([[-0.8, -1], [0.4,0.5]])
 
-def ExpertPValure(dataset, svm_model, p_bl, alpha, threshold = None):
+def ChiSquareTest(c_u, i_u, c_bl, i_bl):
+    test_stat = math.pow(c_u - c_bl, 2) / c_bl + math.pow(i_u - i_bl, 2) / i_bl
+    return test_stat
+
+def ExpertPValure(dataset, svm_model, p_bl, alpha, threshold = 0.5):
     x_train, y_train = dataset
-    y_pred = svm_model.predict_proba(x)
+    y_pred = svm_model.predict_proba(x_train)
+    bullish_idx = np.where(svm_model.classes_)[0][0]
+    y_pred = y_pred[:,bullish_idx]
 
     c_u, i_u = 0, 0
     for i, x in enumerate(x_train):
-        if y_pred[i]:   # predicted bullish
+        if y_pred[i] >= threshold:   # probability of being predicted bullish
             if y[i]: # really stock price up
                 c_u += 1
             else:
@@ -23,16 +29,29 @@ def ExpertPValure(dataset, svm_model, p_bl, alpha, threshold = None):
             continue
     p_u = float(c_u) / (c_u + i_u)
     if p_u <= p_bl:
-        return 0    # non_expert
+        return 0, 0   # non_expert
     else:
         c_bl = p_bl * (c_u + i_u)
         i_bl = (1 - p_bl) * (c_u + i_u)
-        p = Chisqueare(c_u, i_u, c_bl, i_bl)
+        p = ChiSquareTest(c_u, i_u, c_bl, i_bl)
         if p > alpha:
-            return 0 # non_expert
+            return 0, 0 # non_expert
         else:
             return 1, p
 
+def Best_Threshold(dataset, svm_model, p_bl, alpha):
+    '''
+    input varying threshold for svm_model to gain the best (minimal) p_value
+    '''
+    threshold = np.arange(0.05, 1, 0.05)
+    best_p = None
+    best_t = None
+    for t in threshold:
+        exp, p_value = ExpertPValure(dataset, svm_model, p_bl, alpha, t)
+        if exp and (best_p is None or best_p > p_value):
+            best_p = p_value
+            best_t = t
+    return best_t, best_p
 
 
 class Join_All:
@@ -65,17 +84,21 @@ class Per_User:
         self.test_data = test_data
 
     def train(self):
-        threshold = np.arange(0.1,1,0.1)
+        '''
+        get a dict of experts.  {userid: {"threshold": t, "p_value": p_value}}
+        '''
+        expert_id = dict()
         for userid, (x_train, y_train) in zip(self.train_data):
             if self.hold_data.has_key(userid) and self.test_data.has_key(userid):
+                # learn SVM_u for each user and
                 clf = SVC(probability=True)
                 clf.fit(x_train, y_train)
-                ExpertPValure(self.hold_data, clf, p_lb, alpha)
-                y_pred = clf.predict_proba()
-
-
-
-
+                # optimize the classification threshold (grid search) resulting in best p-value for each classifier in hold-out dataset
+                best_threshold, p_value = Best_Threshold(self.hold_data, clf, p_lb, alpha)
+                if best_threshold is not None:
+                    expert_id[userid] = dict()
+                    expert_id[userid]["threshold"] = best_threshold
+                    expert_id[userid]["p_value"] = p_value
 
     def test(self):
         pass
