@@ -100,7 +100,7 @@ class Per_User:
         '''
         get a dict of experts.  {userid: {"threshold": t, "p_value": p_value}}
         '''
-        self.expert_id = dict()
+        self.expert_id = list()
         p_list = list()
         rank_list = list()
         for userid, (x_train, y_train) in zip(self.train_data):
@@ -111,7 +111,7 @@ class Per_User:
                 # optimize the classification threshold (grid search) resulting in best p-value for each classifier in hold-out dataset
                 best_threshold, p_value = Best_Threshold(self.hold_data, clf, p_lb, alpha)
                 if best_threshold is not None:
-                    self.expert_id[userid] = dict()
+                    self.expert_id.append(userid)
                     p_list.append(p_value)
                     # data for user[userid]
                     data_u = get_bullish_set(self.test_data[userid], clf, best_threshold)
@@ -122,15 +122,31 @@ class Per_User:
 
 
 class Joint_Experts:
+    '''
+    train a single joint SVM model from the tweets of experts (Per_User model)
+    '''
     def __init__(self, train_data, hold_data, test_data):
         self.train_data = train_data
         self.hold_data = hold_data
         self.test_data = test_data
 
     def train(self):
-        pass
-
-    def test(self):
-        pass
+        per_user = Per_User(self.train_data, self.hold_data, self.test_data)
+        per_user.train()
+        self.expert_id = per_user.expert_id
+        clf = SVC()
+        score_list = list()
+        rank_list = list()
+        for userid in self.expert_id:
+            x, y = self.train_data[userid]
+            clf.fit(x, y)
+        for userid in self.expert_id:
+            data_u = get_bullish_set(self.test_data[userid], clf)
+            x_u, y_u = data_u
+            score_u = clf.score(x_u, y_u)
+            score_list.append(score_u)
+            rank_list.append(data_u)
+        rank_list = list(np.take(rank_list, np.argsort(score_list)))
+        return rank_list.reverse()  # from large to small score
 
 
