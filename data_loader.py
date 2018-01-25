@@ -10,6 +10,7 @@ import time
 import matplotlib.pyplot as plt
 from datetime import datetime, timedelta
 from openpyxl.reader.excel import load_workbook
+from sklearn import datasets as ds
 from Preprocessing import *
 
 def time_processing(t, tz1, tz2, fmt):
@@ -239,8 +240,9 @@ def msg_process(msg):
     return existence
 
 
-def dataset_process(dataset):
+def dataset_process(dataset, symbol, type):
     user_list = dict()  # {userid: #msg}
+    num_words = len(vocab)
     for userid, info in dataset:
         msgs = info["messages"] # list of messages
         user = info["user_info"]
@@ -249,11 +251,26 @@ def dataset_process(dataset):
         labels = map(lambda x: x["label"], msgs)
         words_idx = Article2Index(list(map(lambda x:x["content"], msgs)), vocab, padding=False)
 
+        s = ""
+        for i in range(len(msgs)):
+            # label
+            s += str(labels[i]) + ' '
+            # words' index
+            idx = sorted(words_idx[i])
+            for e in idx:
+                s += str(e) +':1 '
+            # existence of some elements
+            exist = existences[i]
+            for j,e in enumerate(exist):
+                s += str(j+num_words) + ':' + str(e)
+            s += '\n'
+
         # store idxes into files
-        
+        with open(symbol+'_' + type +'.txt','a') as f:
+            f.write(s)
 
-
-
+    with open(symbol+'_userInfo.pkl', 'a') as f:
+        cPickle.dump(user_list, f)
 
 def data_loader_for_each_symbol(symbol, directory, min_freq = 5, min_len = 0, max_len = 40, batch_size = 16, time_interval = 3, window_size = 10):
     '''
@@ -264,8 +281,6 @@ def data_loader_for_each_symbol(symbol, directory, min_freq = 5, min_len = 0, ma
     :return: train_dataset, test_dataset consisting of tuples of (inputs, targets)
     '''
     stopwords_list = []
-    # get summary information for each symbol
-    train_data, hold_data, test_data = file_processing(symbol, directory)
 
     vocab_file = 'vocab_' + str(min_freq) + '.pkl'
     global vocab
@@ -283,15 +298,24 @@ def data_loader_for_each_symbol(symbol, directory, min_freq = 5, min_len = 0, ma
             print 'cannot find the training text file, thus failing to generate vocabulary. Please try again.'
             return
 
-    idxs = Article2Index(msg_list, min_len, max_len, vocab, stopwords_list)
+    # get datasets for given symbol
+    kinds = ['train', 'hold', 'test']
+    data_files = [symbol + '_' + type + '.txt' for type in kinds]
+    user_file = symbol+'_userInfo.pkl'
+    if os.path.exists(data_files[0]) and os.path.exists(data_files[1]) and os.path.exists(data_files[2]):
+        x_train, y_train, x_hold, y_hold, x_test, y_test = ds.load_svmlight_files(data_files)
+        train_data = (x_train, y_train)
+        hold_data = (x_hold, y_hold)
+        test_data = (x_test, y_test)
+    else:
+        all_datasets = file_processing(symbol, directory)
+        train_data, hold_data, test_data = list(map(lambda x,y:dataset_process(x, symbol, y), all_datasets, kinds))
+    with open(user_file, 'r') as f:
+        user_train = cPickle.load(f)
+        user_hold = cPickle.load(f)
+        user_test = cPickle.load(f)
 
-    print '#data = ', len(msg_list), ' #idx = ', len(idxs)
-    # get label (up or down) for each symbol
-    targets_dict = price_preprocessing(symbol, time_list, time_interval, directory)
-
-
-    # divide data into training and test dataset and return
-    return data_division((idxs, targets_dict[str(time_interval)]), batch_size, window_size)
+    return train_data, hold_data, test_data
 
 
 def data_loader(symbols, directory):

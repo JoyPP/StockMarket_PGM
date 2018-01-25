@@ -1,9 +1,9 @@
 from model import *
-from data_loader import msg_processing
+from data_loader import file_processing
 
 
 symbol = 'BHP'
-train_data, hold_data, test_data = msg_processing(symbol)
+train_data, hold_data, test_data = file_processing(symbol)
 
 alpha = 0.05
 joint_all = Joint_All(train_data, hold_data, test_data)
