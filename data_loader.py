@@ -235,27 +235,22 @@ def msg_process(msg):
     # whether fluctuate no less than 1% in the previous trading day
     existence[4] = msg["fluctuation"]
 
-    # indexes of words
-    translator = string.maketrans(string.punctuation, " " * len(string.punctuation))
-    words = msg.translate(translator).split()
-    word_set = set([])
-    for w in words:
-        word_set.add(vocab[w])
-        if len(w) >= 3:
-            word_set.add(vocab[w[:3]])
-        if len(w) >= 4:
-            word_set.add(vocab[w[:4]])
-        if len(w) >= 5:
-            word_set.add(vocab[w[:5]])
-
     y = msg["label"]
-
+    return existence
 
 
 def dataset_process(dataset):
+    user_list = dict()  # {userid: #msg}
     for userid, info in dataset:
         msgs = info["messages"] # list of messages
         user = info["user_info"]
+        user_list[userid] = len(msgs)
+        existences = map(lambda x: msg_process(x), msgs)
+        labels = map(lambda x: x["label"], msgs)
+        words_idx = Article2Index(list(map(lambda x:x["content"], msgs)), vocab, padding=False)
+
+        # store idxes into files
+        
 
 
 
@@ -270,9 +265,10 @@ def data_loader_for_each_symbol(symbol, directory, min_freq = 5, min_len = 0, ma
     '''
     stopwords_list = []
     # get summary information for each symbol
-    msg_list, time_list, senti_list, msg_like_count_list, author_list = msg_processing(symbol, directory)
+    train_data, hold_data, test_data = file_processing(symbol, directory)
 
     vocab_file = 'vocab_' + str(min_freq) + '.pkl'
+    global vocab
     if os.path.exists(vocab_file):
         with open(vocab_file,'r') as f:
             vocab = cPickle.load(f)
