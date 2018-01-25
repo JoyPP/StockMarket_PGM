@@ -12,6 +12,17 @@ def stemmer(x):
         x = ""
     return x
 
+def prefix(x):
+    l = [x]
+    n = len(x)
+    if n >= 3:
+        l.append(x[:3])
+        if n >= 4:
+            l.append(x[:4])
+            if n >= 5:
+                l.append(x[:5])
+    return l
+
 def Text2Wordlist(raw_text, stopwords_list = list()):
     '''
     get the word list of raw_text
@@ -24,10 +35,16 @@ def Text2Wordlist(raw_text, stopwords_list = list()):
                 .replace('there\'s','there is').replace('there\'re', 'there are').replace('\'ll',' will').replace('\'ve',' have') \
                 .replace('can\'t', 'cannot').replace('won\'t','will not').replace('haven\'t','have not').replace('hasn\'t','has not')
     words = nltk.word_tokenize(raw_text.decode('utf-8'))
+
+    # stemmer
+    words = list(filter(lambda x: x != "", map(lambda x: stemmer(x), words)))
+    # prefix
+    words = list(map(lambda x: prefix(x), words))
+    # combine
+    words = list(reduce(lambda x,y:x+y, words))
+    # delete stopwords
     if len(stopwords_list):
         words = list(filter(lambda x: x not in stopwords_list, words))
-
-    words = list(filter(lambda x: x != "", map(lambda x: stemmer(x), words)))
     return words
 
 def vocab_filter(vocab, threshold):
@@ -58,29 +75,26 @@ def getVocab(raw_text, threshold = 0, stopwords_list = list()):
     vocab = vocab_filter(vocab, threshold)
     return vocab
 
+def getIdx(word_list, vocab, max_length, padding = True):
+    index = list()
+    keys = vocab.keys()
+    for word in word_list:
+        if word in keys:
+            index.append(vocab[word])
+    if padding:
+        index += [0] * (max_length - len(index))
+    else:
+        return index
+    return index[:max_length]
 
-def getIdx(word_list, vocab, max_length):
-	index = list()
-	keys = vocab.keys()
-	for word in word_list:
-		if word in keys:
-			index.append(vocab[word])
-	index += [0] * (max_length - len(index))
-	return index[:max_length]
 
-def Article2Index(texts, min_length, max_length, vocab, stopwords_list = list()):
+def Article2Index(texts, vocab, min_length = 0 , max_length = 100, stopwords_list = list(), padding = True):
     '''
     return list of indexes of texts
-    :param texts:
-    :param min_length:
-    :param max_length:
-    :param vocab:
-    :param stopwords_list:
-    :return:
     '''
     word_lists = map(lambda x: Text2Wordlist(x, stopwords_list), texts)
-    indexes = map(lambda x: getIdx(x, vocab, max_length), word_lists)
-    indexes = filter(lambda x: x[min_length]!=0, indexes)
+    indexes = map(lambda x: getIdx(x, vocab, max_length, padding), word_lists)
+    #indexes = filter(lambda x: x[min_length]!=0, indexes)
     return indexes
 
 if __name__ == '__main__':
