@@ -103,7 +103,7 @@ def file_processing(symbol, rate = '6:2:2', time_interval = 1, msg_dir = 'stockt
         print 'price file doesn\'t exist. Please input correct directory or price file name.'
         return
     dateparse = lambda dates: pd.datetime.strptime(dates, '%Y-%m-%d')
-    price_data = pd.read_csv(price_file, parse_dates=[0], index_col='Date', date_parser=dateparse, usecols=[0,4])
+    price_data = pd.read_csv(price_file, parse_dates=[0], index_col='Date', date_parser=dateparse, usecols=[0,1])   # the usecols indicates which column to be used
     price_data = price_data['Open'] # use open price, other price: High, Low, Close, Adj Close, Volume
 
 
@@ -194,7 +194,8 @@ def file_processing(symbol, rate = '6:2:2', time_interval = 1, msg_dir = 'stockt
 
     return train_data, hold_data, test_data
 
-def msg_process(msg):
+def msg_process(one_msg):
+    msg = one_msg["content"]
     existence = [0] * 5 # url, number, hashtag, question_mark, great_fluctuation(>=1%)
 
     # url
@@ -206,6 +207,8 @@ def msg_process(msg):
             if nxt_space >= 0:
                 # remove url
                 msg = msg[:url_idx] + msg[nxt_space+1:]
+            else:
+                msg = msg[:url_idx]
         else:
             break
 
@@ -234,36 +237,48 @@ def msg_process(msg):
     msg.replace("?", " ")
 
     # whether fluctuate no less than 1% in the previous trading day
-    existence[4] = msg["fluctuation"]
+    existence[4] = one_msg["fluctuation"]
 
-    y = msg["label"]
-    return existence
+    return msg, existence
 
 
 def dataset_process(dataset, symbol, type):
     user_list = dict()  # {userid: #msg}
     num_words = len(vocab)
-    for userid, info in dataset:
+    before_count = 0 # the #data before current user
+    for userid, info in dataset.items():
         msgs = info["messages"] # list of messages
         user = info["user_info"]
-        user_list[userid] = len(msgs)
-        existences = map(lambda x: msg_process(x), msgs)
+        tmp = list(map(lambda x: msg_process(x), msgs))
+        pro_msg = list(map(lambda x:x[0], tmp))
+        existences = list(map(lambda x:x[1], tmp))
         labels = map(lambda x: x["label"], msgs)
-        words_idx = Article2Index(list(map(lambda x:x["content"], msgs)), vocab, padding=False)
+        try:
+            words_idx = Article2Index(pro_msg, vocab, padding=False)
+        except:
+            print 'Error msg = ',pro_msg
 
         s = ""
+        count = 0
         for i in range(len(msgs)):
+            if labels[i] == 0:
+                continue
             # label
             s += str(labels[i]) + ' '
             # words' index
-            idx = sorted(words_idx[i])
+            idx = sorted(set(words_idx[i]))
             for e in idx:
                 s += str(e) +':1 '
             # existence of some elements
             exist = existences[i]
             for j,e in enumerate(exist):
-                s += str(j+num_words) + ':' + str(e)
-            s += '\n'
+                s += str(j+num_words) + ':' + str(e) + ' '
+            if s != "":
+                s += '\n'
+                count += 1
+        #user_list.append(tuple((userid, count)))
+        user_list[userid] = (count, before_count)
+        before_count += count
 
         # store idxes into files
         with open(symbol+'_' + type +'.txt','a') as f:
@@ -272,7 +287,7 @@ def dataset_process(dataset, symbol, type):
     with open(symbol+'_userInfo.pkl', 'a') as f:
         cPickle.dump(user_list, f)
 
-def data_loader_for_each_symbol(symbol, directory, min_freq = 5, min_len = 0, max_len = 40, batch_size = 16, time_interval = 3, window_size = 10):
+def data_loader_for_each_symbol(symbol, rate = '6:2:2', time_interval = 3, msg_dir = "stocktwits_samples/", price_dir = "stock_prices/", min_freq = 5, min_len = 0, max_len = 40, batch_size = 16, window_size = 10):
     '''
     :param symbol: symbol of the stock
     :param model: fasttext model
@@ -302,26 +317,27 @@ def data_loader_for_each_symbol(symbol, directory, min_freq = 5, min_len = 0, ma
     kinds = ['train', 'hold', 'test']
     data_files = [symbol + '_' + type + '.txt' for type in kinds]
     user_file = symbol+'_userInfo.pkl'
-    if os.path.exists(data_files[0]) and os.path.exists(data_files[1]) and os.path.exists(data_files[2]):
-        x_train, y_train, x_hold, y_hold, x_test, y_test = ds.load_svmlight_files(data_files)
-        train_data = (x_train, y_train)
-        hold_data = (x_hold, y_hold)
-        test_data = (x_test, y_test)
-    else:
-        all_datasets = file_processing(symbol, directory)
-        train_data, hold_data, test_data = list(map(lambda x,y:dataset_process(x, symbol, y), all_datasets, kinds))
+    if not (os.path.exists(data_files[0]) and os.path.exists(data_files[1]) and os.path.exists(data_files[2]) and os.path.exists(user_file)):
+        all_datasets = file_processing(symbol=symbol, rate=rate, time_interval=time_interval, msg_dir=msg_dir, price_dir=price_dir)
+        map(lambda x, y: dataset_process(x, symbol, y), all_datasets, kinds)
+
+    x_train, y_train, x_hold, y_hold, x_test, y_test = ds.load_svmlight_files(data_files)
+    train_data = (x_train, y_train)
+    hold_data = (x_hold, y_hold)
+    test_data = (x_test, y_test)
     with open(user_file, 'r') as f:
         user_train = cPickle.load(f)
         user_hold = cPickle.load(f)
         user_test = cPickle.load(f)
 
-    return train_data, hold_data, test_data
+    return (train_data, user_train), (hold_data, user_hold), (test_data, user_test)
 
 
-def data_loader(symbols, directory):
-    train_dataset, test_dataset = [], []
+def data_loader(symbols, msg_dir, price_dir):
+    train_dataset, hold_dataset, test_dataset = [], [], []
     for symbol in symbols:
-        train, test = data_loader_for_each_symbol(symbol, directory)
+        train, hold, test = data_loader_for_each_symbol(symbol, msg_dir=msg_dir, price_dir=price_dir)
         train_dataset.extend(train)
+        hold_dataset.extend(hold)
         test_dataset.extend(test)
-    return train_dataset, test_dataset
+    return train_dataset, hold_dataset, test_dataset
