@@ -36,6 +36,8 @@ def Text2Wordlist(raw_text, stopwords_list = list()):
                 .replace('can\'t', 'cannot').replace('won\'t','will not').replace('haven\'t','have not').replace('hasn\'t','has not')
     words = nltk.word_tokenize(raw_text.decode('utf-8'))
 
+    if len(words) == 0:
+        return [0]
     # stemmer
     words = list(filter(lambda x: x != "", map(lambda x: stemmer(x), words)))
     # prefix
@@ -81,6 +83,8 @@ def getIdx(word_list, vocab, max_length, padding = True):
     for word in word_list:
         if word in keys:
             index.append(vocab[word])
+        else:   # words out of vocab taken as UNKNOWN
+            index.append(0)
     if padding:
         index += [0] * (max_length - len(index))
     else:
