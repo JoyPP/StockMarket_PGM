@@ -2,7 +2,7 @@ from model import *
 from data_loader import data_loader
 
 
-symbol = ['BA']
+symbol = ['GOOGL']
 train, hold, test = data_loader(symbol, msg_dir = 'stocktwits_samples/', price_dir = 'stock_prices/')
 
 alpha = 0.05

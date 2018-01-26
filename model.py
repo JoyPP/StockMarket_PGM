@@ -179,15 +179,17 @@ class Joint_Experts:
             x_u, y_u = x_train[bef_exp_train: bef_exp_train+num_exp_train], y_train[bef_exp_train: bef_exp_train+num_exp_train]
             self.clf.fit(x_u, y_u)
         # apply SVM model to tweets of experts in test dataset
+        bullish_idx = np.where(self.clf.classes_ > 0)[0][0]
         for userid in self.expert_id:
             num_exp_test, bef_exp_test = self.test_user[userid]
             if num_exp_test == 0:
                 continue
 
             x_u, y_u = x_test[bef_exp_test: bef_exp_test + num_exp_test], y_test[bef_exp_test: bef_exp_test + num_exp_test]
-            score_u = self.clf.score(x_u, y_u)
-            rank_list.append((y_u.tolist(), score_u))
-        rank_list.sort(key=lambda tup: tup[1], reverse=True)    # score from large to small
-        final_list = reduce(lambda x, y: (x[0] + y[0],), rank_list)[0]
+            y_pred = self.clf.predict_proba(x_u)[:,bullish_idx]
+
+            rank_list.extend(map(lambda a, b: (a, b), y_u.tolist(), y_pred))
+        rank_list.sort(key=lambda tup: tup[1], reverse=True)
+        final_list = map(lambda x: x[0], rank_list)
         return final_list
 

@@ -116,7 +116,7 @@ def file_processing(symbol, rate = '6:2:2', time_interval = 1, msg_dir = 'stockt
     row[1] += row[0]
     row = [max_row - i for i in row]    # reverse as time sequence
 
-    for i in range(max_row + 1, 2, -1):
+    for i in range(max_row, 1, -1):
         # read summary and save it into the msg_list
         one_msg = dict()
         msg = ws['B'+str(i)].value  # message
