@@ -136,8 +136,8 @@ class Per_User:
                 clf = SVC(probability=True)
                 clf.fit(x_u, y_u)
                 # optimize the classification threshold (grid search) resulting in best p-value for each classifier in hold-out dataset
-                #best_threshold, p_value = Best_Threshold(self.hold_data, clf, p_bl, alpha)
-                best_threshold, p_value = np.random.uniform(), np.random.uniform()
+                best_threshold, p_value = Best_Threshold(self.hold_data, clf, p_bl, alpha)
+                #best_threshold, p_value = np.random.uniform(), np.random.uniform()
                 if best_threshold is not None:
                     # data for user[userid]
                     num_exp_test, bef_exp_test = self.test_user[userid]
@@ -147,7 +147,10 @@ class Per_User:
                         rank_list.append((pos_y.tolist(), p_value))
                         self.expert_id.append(userid)
         rank_list.sort(key=lambda tup:tup[1])   # p_value from small to large
-        final_list = reduce(lambda x,y: (x[0]+y[0],), rank_list)[0]
+        if len(rank_list):
+            final_list = reduce(lambda x,y: (x[0]+y[0],), rank_list)[0]
+        else:
+            final_list = []
         return final_list
 
 
@@ -168,6 +171,9 @@ class Joint_Experts:
             per_user = Per_User((self.train_data, self.train_user),(self.hold_data, self.hold_user),(self.test_data, self.test_user))
             per_user.train(p_bl, alpha)
             self.expert_id = per_user.expert_id
+
+        if len(self.expert_id) == 0:
+            return []
 
         score_list = list()
         rank_list = list()

@@ -79,7 +79,7 @@ def get_price_label(price_data, t, time_interval = 1, threshold = 0.03):
     return label
 
 
-def file_processing(symbol, rate = '6:2:2', time_interval = 1, msg_dir = 'stocktwits_samples/', price_dir = 'stock_prices/'):
+def file_processing(symbol, rate = '6:2:2',train_data = dict(), hold_data = dict(), test_data = dict(), time_interval = 1, msg_dir = 'stocktwits_samples/', price_dir = 'stock_prices/'):
     # read msg file
     msg_file = msg_dir + symbol + '.xlsx'
     wb = load_workbook(filename=msg_file)
@@ -108,9 +108,6 @@ def file_processing(symbol, rate = '6:2:2', time_interval = 1, msg_dir = 'stockt
 
 
     # save data
-    train_data = dict()
-    hold_data = dict()
-    test_data = dict()
     row = [int(k) for k in rate.split(':')]
     row = [int(i * max_row/sum(row)) for i in row[:-1]]
     row[1] += row[0]
@@ -241,8 +238,7 @@ def msg_process(one_msg):
 
     return msg, existence
 
-
-def dataset_process(dataset, symbol, type):
+def dataset_process(dataset, type):
     user_list = dict()  # {userid: #msg}
     num_words = len(vocab)
     before_count = 0 # the #data before current user
@@ -281,13 +277,13 @@ def dataset_process(dataset, symbol, type):
         before_count += count
 
         # store idxes into files
-        with open(symbol+'_' + type +'.txt','a') as f:
+        with open(type +'.txt','a') as f:
             f.write(s)
 
-    with open(symbol+'_userInfo.pkl', 'a') as f:
+    with open('UserInfo.pkl', 'a') as f:
         cPickle.dump(user_list, f)
 
-def data_loader_for_each_symbol(symbol, rate = '6:2:2', time_interval = 3, msg_dir = "stocktwits_samples/", price_dir = "stock_prices/", min_freq = 5, min_len = 0, max_len = 40, batch_size = 16, window_size = 10):
+def data_loader(symbols, rate = '3:2:2', time_interval = 3, msg_dir = "stocktwits_samples/", price_dir = "stock_prices/", min_freq = 5):
     '''
     :param symbol: symbol of the stock
     :param model: fasttext model
@@ -297,6 +293,7 @@ def data_loader_for_each_symbol(symbol, rate = '6:2:2', time_interval = 3, msg_d
     '''
     stopwords_list = []
 
+    # get vocab
     vocab_file = 'vocab_' + str(min_freq) + '.pkl'
     global vocab
     if os.path.exists(vocab_file):
@@ -315,12 +312,21 @@ def data_loader_for_each_symbol(symbol, rate = '6:2:2', time_interval = 3, msg_d
 
     # get datasets for given symbol
     kinds = ['train', 'hold', 'test']
-    data_files = [symbol + '_' + type + '.txt' for type in kinds]
-    user_file = symbol+'_userInfo.pkl'
+    data_files = [type + '.txt' for type in kinds]
+    user_file = 'UserInfo.pkl'
+    # initialize dataset
+    train_set = dict()
+    hold_set = dict()
+    test_set = dict()
     if not (os.path.exists(data_files[0]) and os.path.exists(data_files[1]) and os.path.exists(data_files[2]) and os.path.exists(user_file)):
-        all_datasets = file_processing(symbol=symbol, rate=rate, time_interval=time_interval, msg_dir=msg_dir, price_dir=price_dir)
+        for symbol in symbols:
+            # process and return dataset
+            train_set, hold_set, test_set = file_processing(symbol=symbol, rate=rate, train_data=train_set, hold_data=hold_set, test_data=test_set,time_interval=time_interval, msg_dir=msg_dir, price_dir=price_dir)
+        # save dataset and user information into seperate files
+        all_datasets = (train_set, hold_set, test_set)
         map(lambda x, y: dataset_process(x, symbol, y), all_datasets, kinds)
 
+    # load data from local files
     x_train, y_train, x_hold, y_hold, x_test, y_test = ds.load_svmlight_files(data_files)
     train_data = (x_train, y_train)
     hold_data = (x_hold, y_hold)
@@ -332,12 +338,3 @@ def data_loader_for_each_symbol(symbol, rate = '6:2:2', time_interval = 3, msg_d
 
     return (train_data, user_train), (hold_data, user_hold), (test_data, user_test)
 
-
-def data_loader(symbols, msg_dir, price_dir):
-    train_dataset, hold_dataset, test_dataset = [], [], []
-    for symbol in symbols:
-        train, hold, test = data_loader_for_each_symbol(symbol, msg_dir=msg_dir, price_dir=price_dir)
-        train_dataset.extend(train)
-        hold_dataset.extend(hold)
-        test_dataset.extend(test)
-    return train_dataset, hold_dataset, test_dataset
