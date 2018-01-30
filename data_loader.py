@@ -1,13 +1,7 @@
 import os
-import re
-import string
 import pytz
-import fasttext
 import pandas as pd
-import numpy as np
 import cPickle
-import time
-import matplotlib.pyplot as plt
 from datetime import datetime, timedelta
 from openpyxl.reader.excel import load_workbook
 from sklearn import datasets as ds
@@ -85,10 +79,17 @@ def file_processing(symbol, rate = '6:2:2',train_data = dict(), hold_data = dict
     wb = load_workbook(filename=msg_file)
     ws = wb.get_active_sheet()
     max_row, max_col = ws.max_row, ws.max_column
-    print 'max_row = ', max_row
+    print 'For', symbol, ', max_row = ', max_row
+
     col_dict = {1: 'A', 2: 'B', 3: 'C', 4: 'D', 5: 'E', 6: 'F', 7: 'G', 8: 'H', 9: 'I', 10: 'J', 11: 'K', 12: 'L',
                 13: 'M', 14: 'N', 15: 'O', 16: 'P', 17: 'Q', 18: 'R', 19: 'S', 20: 'T', 21: 'U', 22: 'V', 23: 'W',
                 24: 'X', 25: 'Y', 26: 'Z'}
+    # match hearders and corresponding column
+    headers = dict()
+    for c in range(1, max_col+1):
+        s = ws[col_dict[c]+'1'].value.encode('utf-8')
+        headers[s] = col_dict[c]
+
     # transfer all punctuations to whitespace
     translator = string.maketrans(string.punctuation, " " * len(string.punctuation))
 
@@ -116,9 +117,9 @@ def file_processing(symbol, rate = '6:2:2',train_data = dict(), hold_data = dict
     for i in range(max_row, 1, -1):
         # read summary and save it into the msg_list
         one_msg = dict()
-        msg = ws['B'+str(i)].value  # message
+        msg = ws[headers['Message']+str(i)].value  # message
         if msg is not None:
-            #context = ws['E'+str(i)].value
+            #context = ws[headers['Context']+str(i)].value
             #if context is not None:
             #    msg += context
             one_msg["content"] = msg.encode('utf-8').replace("$"+symbol, " ")
@@ -126,7 +127,7 @@ def file_processing(symbol, rate = '6:2:2',train_data = dict(), hold_data = dict
             continue
 
         # read time and transfer it to US/Eastern Timezone and save it into the time_info
-        post_date = time_processing(ws['D'+str(i)].value.encode('utf-8'), utc, eastern, fmt)
+        post_date = time_processing(ws[headers['Created_time']+str(i)].value.encode('utf-8'), utc, eastern, fmt)
         one_msg["time"] = post_date # only save the date
         label = get_price_label(price_data, post_date, time_interval, threshold=0.03)
         one_msg["label"] = label
@@ -134,7 +135,7 @@ def file_processing(symbol, rate = '6:2:2',train_data = dict(), hold_data = dict
         one_msg["fluctuation"] = abs(fluctuation)
 
         # read sentiment
-        senti = ws['G'+str(i)].value
+        senti = ws[headers['Sentiment']+str(i)].value
         if senti is not None:
             if senti.encode('utf-8') == "Bullish":
                 one_msg["sentiment"] = 1
@@ -144,37 +145,37 @@ def file_processing(symbol, rate = '6:2:2',train_data = dict(), hold_data = dict
             one_msg["sentiment"] = 0
 
         # msg_like_count
-        one_msg["msg_like_count"] = int(ws['H'+str(i)].value)
+        one_msg["msg_like_count"] = int(ws[headers['Msg_Like_Count']+str(i)].value)
 
         # read user information and save it one_user
         one_user = dict()
-        userid = int(ws['L'+str(i)].value)
+        userid = int(ws[headers['UserID']+str(i)].value)
 
-        if not ws['M'+str(i)].value:
+        if not ws[headers['Official']+str(i)].value:
             one_user["official"] = 0
         else:
             one_user["official"] = 1
-        classification = ws['N'+str(i)].value
+        classification = ws[headers['Classification']+str(i)].value
         if classification is not None and classification.encode('utf-8').lower().find('suggested') >= 0:
             one_user["suggested"] = 1
         else:
             one_user["suggested"] = 0
 
-        one_user["user_like_count"] = int(ws['O'+str(i)].value)
-        one_user["ideas"] = int(ws['P'+str(i)].value)
-        one_user["followers"] = int(ws['Q'+str(i)].value)
-        one_user["following"] = int(ws['R'+str(i)].value)
+        one_user["user_like_count"] = int(ws[headers['User_Like_Count']+str(i)].value)
+        one_user["ideas"] = int(ws[headers['Ideas']+str(i)].value)
+        one_user["followers"] = int(ws[headers['Followers']+str(i)].value)
+        one_user["following"] = int(ws[headers['Following']+str(i)].value)
 
-        one_msg["join_days"] = day_diff(ws['S'+str(i)].value.encode('utf-8'), post_date)
+        one_msg["join_days"] = day_diff(ws[headers['Join_Date']+str(i)].value.encode('utf-8'), post_date)
 
-        if i >= row[0]:
+        if post_date < '2015': # i >= row[0]:
             if train_data.has_key(userid):
                 train_data[userid]["messages"].append(one_msg)
             else:
                 train_data[userid] = dict()
                 train_data[userid]["messages"] = [one_msg]
                 train_data[userid]["user_info"] = one_user
-        elif i >= row[1]:
+        elif post_date < '2017': # i >= row[1]:
             if hold_data.has_key(userid):
                 hold_data[userid]["messages"].append(one_msg)
             else:
@@ -277,13 +278,13 @@ def dataset_process(dataset, type):
         before_count += count
 
         # store idxes into files
-        with open(type +'.txt','a') as f:
+        with open('mid-data/'+type +'.txt','a') as f:
             f.write(s)
 
-    with open('UserInfo.pkl', 'a') as f:
+    with open('mid-data/UserInfo.pkl', 'a') as f:
         cPickle.dump(user_list, f)
 
-def data_loader(symbols, rate = '3:2:2', time_interval = 3, msg_dir = "stocktwits_samples/", price_dir = "stock_prices/", min_freq = 5):
+def data_loader(symbols, rate = '3:2:2', time_interval = 1, msg_dir = "stocktwits_samples/", price_dir = "stock_prices/", min_freq = 5):
     '''
     :param symbol: symbol of the stock
     :param model: fasttext model
@@ -312,8 +313,8 @@ def data_loader(symbols, rate = '3:2:2', time_interval = 3, msg_dir = "stocktwit
 
     # get datasets for given symbol
     kinds = ['train', 'hold', 'test']
-    data_files = [type + '.txt' for type in kinds]
-    user_file = 'UserInfo.pkl'
+    data_files = ['mid-data/' + type + '.txt' for type in kinds]
+    user_file = 'mid-data/UserInfo.pkl'
     # initialize dataset
     train_set = dict()
     hold_set = dict()
@@ -324,10 +325,12 @@ def data_loader(symbols, rate = '3:2:2', time_interval = 3, msg_dir = "stocktwit
             train_set, hold_set, test_set = file_processing(symbol=symbol, rate=rate, train_data=train_set, hold_data=hold_set, test_data=test_set,time_interval=time_interval, msg_dir=msg_dir, price_dir=price_dir)
         # save dataset and user information into seperate files
         all_datasets = (train_set, hold_set, test_set)
-        map(lambda x, y: dataset_process(x, symbol, y), all_datasets, kinds)
+        print 'Before process, #users in each dataset: #train = %d, #hold = %d, test = %d' % (len(train_set), len(hold_set), len(test_set))
+        map(lambda x, y: dataset_process(x, y), all_datasets, kinds)
 
     # load data from local files
     x_train, y_train, x_hold, y_hold, x_test, y_test = ds.load_svmlight_files(data_files)
+    print 'After process: #train = %d, #hold = %d, test = %d' % (x_train.shape[0], x_hold.shape[0], x_test.shape[0])
     train_data = (x_train, y_train)
     hold_data = (x_hold, y_hold)
     test_data = (x_test, y_test)
