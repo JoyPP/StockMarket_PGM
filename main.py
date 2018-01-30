@@ -13,6 +13,7 @@ train, hold, test = data_loader(symbols,  msg_dir = msg_dir,  price_dir = price_
 alpha = 0.05
 joint_all = Joint_All(train, hold, test)
 joint_all_list, p_bl = joint_all.train()
+print 'the baseline prob = ', p_bl
 
 per_user = Per_User(train, hold, test)
 per_user_list = per_user.train(p_bl, alpha)

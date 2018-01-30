@@ -85,17 +85,19 @@ class Joint_All:
         '''
         return the ranking list and baseline precision
         '''
-        # learning SVM from training data
+        # learning SVM from training and hold data
         x_train, y_train = self.train_data
         self.clf.fit(x_train, y_train)
+        x_hold, y_hold = self.hold_data
+        self.clf.fit(x_hold, y_hold)
 
         # counting the number of positive examples in training data
-        c_bl = len(np.where(np.array(y_train) > 0)[0])
-        total = len(y_train)
+        c_bl = len(np.where(np.array(y_train) > 0)[0]) + len(np.where(np.array(y_hold) > 0)[0])
+        total = len(y_train) + len(y_hold)
         p_bl = float(c_bl) / total
 
         # apply SVM to test data
-        rank_list = list()  # list of (x_u, y_u, y_pred)
+        rank_list = list()  # list of (y_u, y_pred)
         x_test, y_test = self.test_data
         y_pred = self.clf.predict_proba(x_test)
         bullish_idx = np.where(self.clf.classes_>0)[0][0]
