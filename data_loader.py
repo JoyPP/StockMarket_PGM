@@ -168,7 +168,7 @@ def file_processing(symbol, rate = '6:2:2',train_data = dict(), hold_data = dict
 
         one_msg["join_days"] = day_diff(ws[headers['Join_Date']+str(i)].value.encode('utf-8'), post_date)
 
-        if post_date < '2015': # i >= row[0]:
+        if post_date < '2016': # i >= row[0]:
             if train_data.has_key(userid):
                 train_data[userid]["messages"].append(one_msg)
             else:

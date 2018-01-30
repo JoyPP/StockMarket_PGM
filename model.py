@@ -1,6 +1,7 @@
 from sklearn.svm import SVC
 import numpy as np
 import math
+import scipy.stats as stats
 
 def get_bullish_set(dataset, svm_model, threshold = 0.5):
     '''
@@ -15,14 +16,6 @@ def get_bullish_set(dataset, svm_model, threshold = 0.5):
     idx = np.where(y_pred >= threshold)[0]
 
     return x_train[idx], y_train[idx]
-
-
-def ChiSquareTest(c_u, i_u, c_bl, i_bl):
-    '''
-    return the chi square test statistic
-    '''
-    test_stat = math.pow(c_u - c_bl, 2) / c_bl + math.pow(i_u - i_bl, 2) / i_bl
-    return test_stat
 
 
 def ExpertPValure(dataset, svm_model, p_bl, alpha, threshold = 0.5):
@@ -48,7 +41,7 @@ def ExpertPValure(dataset, svm_model, p_bl, alpha, threshold = 0.5):
     else:
         c_bl = p_bl * (c_u + i_u)
         i_bl = (1 - p_bl) * (c_u + i_u)
-        p = ChiSquareTest(c_u, i_u, c_bl, i_bl)
+        test_stat, p = stats.chisquare([c_u, i_u], [c_bl, i_bl])
         if p > alpha:
             return 0, 0 # non_expert
         else:
