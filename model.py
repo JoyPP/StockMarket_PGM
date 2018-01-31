@@ -88,17 +88,19 @@ class Joint_All:
         c_bl = len(np.where(np.array(y_train) > 0)[0]) + len(np.where(np.array(y_hold) > 0)[0])
         total = len(y_train) + len(y_hold)
         p_bl = float(c_bl) / total
+        return p_bl
 
+    def test(self):
         # apply SVM to test data
-        rank_list = list()  # list of (y_u, y_pred)
+        self.rank_list = list()  # list of (y_u, y_pred)
         x_test, y_test = self.test_data
         y_pred = self.clf.predict_proba(x_test)
         bullish_idx = np.where(self.clf.classes_>0)[0][0]
         y_pred = y_pred[:, bullish_idx] # get the probability of predicting as bullish
-        rank_list.extend(map(lambda a,b: (a,b), y_test, y_pred))
-        rank_list.sort(key=lambda tup: tup[1], reverse=True)
-        final_list = map(lambda x:x[0], rank_list)
-        return final_list, p_bl
+        self.rank_list.extend(map(lambda a,b: (a,b), y_test, y_pred))
+        self.rank_list.sort(key=lambda tup: tup[1], reverse=True)
+        #final_list = map(lambda x:x[0], rank_list)
+        return self.rank_list
 
 
 class Per_User:
@@ -143,10 +145,10 @@ class Per_User:
                         self.expert_id.append(userid)
         rank_list.sort(key=lambda tup:tup[1])   # p_value from small to large
         if len(rank_list):
-            final_list = reduce(lambda x,y: (x[0]+y[0],), rank_list)[0]
+            self.rank_list = reduce(lambda x,y: (x[0]+y[0],), rank_list)[0]
         else:
-            final_list = []
-        return final_list
+            self.rank_list = []
+        return self.rank_list
 
 
 
@@ -154,31 +156,32 @@ class Joint_Experts:
     '''
     train a single joint SVM model from the tweets of experts (Per_User model)
     '''
-    def __init__(self, train_data, hold_data, test_data, expert_list = None):
+    def __init__(self, train_data, hold_data, test_data, p_bl, alpha, expert_list = None):
         self.train_data, self.train_user = train_data
         self.hold_data, self.hold_user = hold_data
         self.test_data, self.test_user = test_data
-        self.expert_id = expert_list
         self.clf = SVC(probability=True)
-
-    def train(self, p_bl, alpha):
+        self.expert_id = expert_list
         if self.expert_id is None:
             per_user = Per_User((self.train_data, self.train_user),(self.hold_data, self.hold_user),(self.test_data, self.test_user))
             per_user.train(p_bl, alpha)
             self.expert_id = per_user.expert_id
 
+    def train(self):
         if len(self.expert_id) == 0:
             return []
 
-        score_list = list()
-        rank_list = list()
         x_train, y_train = self.train_data
-        x_test, y_test = self.test_data
         # learn a single joint SVM model from tweets of experts in train dataset
         for userid in self.expert_id:
             num_exp_train, bef_exp_train = self.train_user[userid]
             x_u, y_u = x_train[bef_exp_train: bef_exp_train+num_exp_train], y_train[bef_exp_train: bef_exp_train+num_exp_train]
             self.clf.fit(x_u, y_u)
+
+    def test(self):
+        self.rank_list = list()
+        x_test, y_test = self.test_data
+
         # apply SVM model to tweets of experts in test dataset
         bullish_idx = np.where(self.clf.classes_ > 0)[0][0]
         for userid in self.expert_id:
@@ -189,8 +192,8 @@ class Joint_Experts:
             x_u, y_u = x_test[bef_exp_test: bef_exp_test + num_exp_test], y_test[bef_exp_test: bef_exp_test + num_exp_test]
             y_pred = self.clf.predict_proba(x_u)[:,bullish_idx]
 
-            rank_list.extend(map(lambda a, b: (a, b), y_u.tolist(), y_pred))
-        rank_list.sort(key=lambda tup: tup[1], reverse=True)
-        final_list = map(lambda x: x[0], rank_list)
-        return final_list
+            self.rank_list.extend(map(lambda a, b: (a, b), y_u.tolist(), y_pred))
+            self.rank_list.sort(key=lambda tup: tup[1], reverse=True)
+        #final_list = map(lambda x: x[0], rank_list)  # delete prob
+        return self.rank_list
 
