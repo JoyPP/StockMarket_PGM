@@ -118,8 +118,7 @@ class Per_User:
         get a dict of experts.  {userid: {"threshold": t, "p_value": p_value}}
         '''
         self.expert_id = list()
-        p_list = list()
-        rank_list = list()
+        self.rank_list = list()
         x_train, y_train = self.train_data
         x_test, y_test = self.test_data
         for userid, (num_exp_train, bef_exp_train) in self.train_user.items():
@@ -141,13 +140,13 @@ class Per_User:
                     if num_exp_test:
                         x_u, y_u = x_test[bef_exp_test: bef_exp_test+num_exp_test], y_test[bef_exp_test: bef_exp_test+num_exp_test]
                         pos_x, pos_y = get_bullish_set((x_u, y_u), clf, best_threshold)
-                        rank_list.append((pos_y.tolist(), p_value))
+                        self.rank_list.append((pos_y.tolist(), p_value))
                         self.expert_id.append(userid)
-        rank_list.sort(key=lambda tup:tup[1])   # p_value from small to large
-        if len(rank_list):
-            self.rank_list = reduce(lambda x,y: (x[0]+y[0],), rank_list)[0]
-        else:
-            self.rank_list = []
+        self.rank_list.sort(key=lambda tup:tup[1])   # p_value from small to large
+        #if len(rank_list):
+        #    self.rank_list = reduce(lambda x,y: (x[0]+y[0],), rank_list)[0]
+        #else:
+        #    self.rank_list = []
         return self.rank_list
 
 
