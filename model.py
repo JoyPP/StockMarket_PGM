@@ -2,6 +2,7 @@ from sklearn.svm import SVC
 import numpy as np
 import math
 import scipy.stats as stats
+from scipy.sparse import vstack
 
 def get_bullish_set(dataset, svm_model, threshold = 0.5):
     '''
@@ -80,9 +81,8 @@ class Joint_All:
         '''
         # learning SVM from training and hold data
         x_train, y_train = self.train_data
-        self.clf.fit(x_train, y_train)
         x_hold, y_hold = self.hold_data
-        self.clf.fit(x_hold, y_hold)
+        self.clf.fit(vstack([x_train,x_hold]), np.hstack((y_train, y_hold)))
 
         # counting the number of positive examples in training data
         c_bl = len(np.where(np.array(y_train) > 0)[0]) + len(np.where(np.array(y_hold) > 0)[0])
@@ -133,7 +133,6 @@ class Per_User:
                 clf.fit(x_u, y_u)
                 # optimize the classification threshold (grid search) resulting in best p-value for each classifier in hold-out dataset
                 best_threshold, p_value = Best_Threshold(self.hold_data, clf, p_bl, alpha)
-                #best_threshold, p_value = np.random.uniform(), np.random.uniform()
                 if best_threshold is not None:
                     # data for user[userid]
                     num_exp_test, bef_exp_test = self.test_user[userid]
@@ -143,6 +142,7 @@ class Per_User:
                         self.rank_list.append((pos_y.tolist(), p_value))
                         self.expert_id.append(userid)
         self.rank_list.sort(key=lambda tup:tup[1])   # p_value from small to large
+        self.rank_list = map(lambda x:x[0], self.rank_list)
         #if len(rank_list):
         #    self.rank_list = reduce(lambda x,y: (x[0]+y[0],), rank_list)[0]
         #else:
@@ -171,11 +171,36 @@ class Joint_Experts:
             return []
 
         x_train, y_train = self.train_data
+        x_hold, y_hold = self.hold_data
         # learn a single joint SVM model from tweets of experts in train dataset
+        x_u, y_u = None, None
         for userid in self.expert_id:
+            # train with data from train_data
             num_exp_train, bef_exp_train = self.train_user[userid]
-            x_u, y_u = x_train[bef_exp_train: bef_exp_train+num_exp_train], y_train[bef_exp_train: bef_exp_train+num_exp_train]
-            self.clf.fit(x_u, y_u)
+            if num_exp_train == 0:
+                continue
+            xt_u, yt_u = x_train[bef_exp_train: bef_exp_train+num_exp_train], y_train[bef_exp_train: bef_exp_train+num_exp_train]
+            # train with data from hold_data
+            num_exp_hold, bef_exp_hold = self.hold_user[userid]
+            if num_exp_hold == 0:
+                if x_u is not None:
+                    x_u = vstack([x_u, xt_u])
+                    y_u = np.hstack((y_u, yt_u))
+                else:
+                    x_u = xt_u
+                    y_u = yt_u
+                continue
+            xh_u, yh_u = x_hold[bef_exp_hold: bef_exp_hold + num_exp_hold], y_hold[bef_exp_hold: bef_exp_hold + num_exp_hold]
+            if x_u is not None:
+                x_u = vstack([x_u, xt_u, xh_u])
+                y_u = np.hstack((y_u, yt_u, yh_u))
+            else:
+                x_u = vstack([xt_u, xh_u])
+                y_u = np.hstack((yt_u, yh_u))
+
+        self.clf.fit(x_u, y_u)
+        print x_u.shape, len(y_u)
+
 
     def test(self):
         self.rank_list = list()
@@ -195,4 +220,17 @@ class Joint_Experts:
             self.rank_list.sort(key=lambda tup: tup[1], reverse=True)
         #final_list = map(lambda x: x[0], rank_list)  # delete prob
         return self.rank_list
+
+
+class DL_Experts:
+    def __init__(self):
+        pass
+
+    def train(self):
+        pass
+
+    def test(self):
+        pass
+
+
 
